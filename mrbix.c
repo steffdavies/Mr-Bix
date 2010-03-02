@@ -18,6 +18,8 @@
 #define CB_OUT "out"
 #define CB_OUT_NR "out_nr"
 
+#define K64 (1024*64)
+
 int chloe(unsigned short s_port, char *s_ip, int inout);
 void levent_socket_attach(int sock, struct event_base *base, char *cb_inout);
 void set_non_blocking(int fd);
@@ -44,6 +46,17 @@ int main(int argc, char **argv)
 void cb_func(evutil_socket_t fd, short what, void *arg)
   {
   const char *data = arg;
+  void *buf;
+  int bytes;
+  struct sockaddr *addr;
+  socklen_t *addrlen;
+  int newfd;
+
+  if((buf=malloc(K64))==NULL)
+    {
+    perror("malloc");
+    exit(1);
+    }
   printf("Got an event on socket %d:%s%s%s%s [%s]\n",
   (int) fd,
     (what&EV_TIMEOUT) ? " timeout" : "",
@@ -54,6 +67,16 @@ void cb_func(evutil_socket_t fd, short what, void *arg)
   if(!strcmp(data,CB_IN))
     {
     printf("Event was on our input socket %d\n", fd);
+    newfd=accept(fd, NULL, NULL);
+    if((newfd==-1))
+      {
+      perror("accept");
+      }
+    bytes=recv(newfd, buf, K64, 0);
+    if((bytes==-1))
+      {
+      perror("recv");
+      }
     }
   if(!strcmp(data,CB_OUT))
     {
@@ -63,6 +86,7 @@ void cb_func(evutil_socket_t fd, short what, void *arg)
     {
     printf("Event was on our non-return output socket %d\n", fd);
     }
+  free(buf);
   return;
   }
 
