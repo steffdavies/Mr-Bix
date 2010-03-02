@@ -20,6 +20,12 @@
 
 #define K64 (1024*64)
 
+struct conn_set { 
+  int c_in;
+  int c_out;
+  int c_out_nr;
+};
+
 int chloe(unsigned short s_port, char *s_ip, int inout);
 void levent_socket_attach(int sock, struct event_base *base, char *cb_inout);
 void set_non_blocking(int fd);
