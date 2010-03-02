@@ -13,10 +13,13 @@
 
 #define OUT 0
 #define IN  1
-#define OUT_WITHOUT_RETURN 2
+
+#define CB_IN "in"
+#define CB_OUT "out"
+#define CB_OUT_NR "out_nr"
 
 int chloe(unsigned short s_port, char *s_ip, int inout);
-void levent_socket_attach(int sock, struct event_base *base, int inout);
+void levent_socket_attach(int sock, struct event_base *base, char *cb_inout);
 void set_non_blocking(int fd);
 
 int main(int argc, char **argv)
@@ -27,15 +30,40 @@ int main(int argc, char **argv)
 // open listening socket
   sock=chloe(9000,"127.0.0.1", IN);
   base = event_base_new();
-  levent_socket_attach(sock,base, IN);
+  levent_socket_attach(sock,base, CB_IN);
 // open outgoing socket
   sock=chloe(9999,"127.0.0.1", OUT);
-  levent_socket_attach(sock,base,IN);
+  levent_socket_attach(sock,base,CB_OUT);
   while(1)
     {
     event_base_dispatch(base);
     }
   return 0;
+  }
+
+void cb_func(evutil_socket_t fd, short what, void *arg)
+  {
+  const char *data = arg;
+  printf("Got an event on socket %d:%s%s%s%s [%s]\n",
+  (int) fd,
+    (what&EV_TIMEOUT) ? " timeout" : "",
+    (what&EV_READ)    ? " read" : "",
+    (what&EV_WRITE)   ? " write" : "",
+    (what&EV_SIGNAL)   ? " signal" : "",
+      data);
+  if(!strcmp(data,CB_IN))
+    {
+    printf("Event was on our input socket %d\n", fd);
+    }
+  if(!strcmp(data,CB_OUT))
+    {
+    printf("Event was on our output socket %d\n", fd);
+    }
+   if(!strcmp(data,CB_OUT_NR))
+    {
+    printf("Event was on our non-return output socket %d\n", fd);
+    }
+  return;
   }
 
 int chloe(unsigned short s_port, char *s_ip, int inout)   /* "Chloe, patch me a (non-blocking) socket!" */
@@ -80,19 +108,6 @@ int chloe(unsigned short s_port, char *s_ip, int inout)   /* "Chloe, patch me a 
   return sock;
   }
 
-void cb_func(evutil_socket_t fd, short what, void *arg)
-  {
-  const char *data = arg;
-  printf("Got an event on socket %d:%s%s%s%s [%s]\n",
-  (int) fd,
-    (what&EV_TIMEOUT) ? " timeout" : "",
-    (what&EV_READ)    ? " read" : "",
-    (what&EV_WRITE)   ? " write" : "",
-    (what&EV_SIGNAL)   ? " signal" : "",
-      data);
-  return;
-  }
-
 void set_non_blocking(int fd)
   {
   int flags;
@@ -107,10 +122,10 @@ void set_non_blocking(int fd)
   return;
   }    
 
-void levent_socket_attach(int sock, struct event_base *base, int inout)
+void levent_socket_attach(int sock, struct event_base *base, char * cb_inout)
   {
   struct event *ev;
-  ev = event_new(base, sock, EV_READ|EV_WRITE, cb_func, inout);
+  ev = event_new(base, sock, EV_READ|EV_WRITE, cb_func, cb_inout);
   event_add(ev, NULL);
   }
   
