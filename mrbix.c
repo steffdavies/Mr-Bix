@@ -9,7 +9,9 @@
 #include <stdio.h>
 #include <sys/socket.h>
 #include <errno.h>
-#include<fcntl.h>
+#include <fcntl.h>
+#include <stdbool.h>
+#include <unistd.h>
 
 #define OUT 0
 #define IN  1
@@ -20,31 +22,50 @@
 
 #define K64 (1024*64)
 
-struct conn_set { 
+struct conn_set{ 
+  bool inuse;
   int c_in;
   int c_out;
   int c_out_nr;
 };
 
+struct event_base *gbase;
+struct conn_set *gstate_table; 
+
+
 int chloe(unsigned short s_port, char *s_ip, int inout);
 void levent_socket_attach(int sock, struct event_base *base, char *cb_inout);
 void set_non_blocking(int fd);
+int find_unused_conn_set (void);
 
 int main(int argc, char **argv)
   {
+  int i;
   int sock;
-  struct event_base *base;
+  struct conn_set *state_table; 
+  
+  state_table=malloc(1000*sizeof(struct conn_set));
+  if(state_table==NULL)
+    {
+    perror("malloc");
+    exit(1);
+    }
+  for(i=0; i<1000; i++)
+    {
+    state_table[i].inuse=0;
+    state_table[i].c_in=-1;
+    state_table[i].c_out=-1;
+    state_table[i].c_out_nr=-1;
+    }
+  gstate_table=state_table;
 
 // open listening socket
   sock=chloe(9000,"127.0.0.1", IN);
-  base = event_base_new();
-  levent_socket_attach(sock,base, CB_IN);
-// open outgoing socket
-  sock=chloe(9999,"127.0.0.1", OUT);
-  levent_socket_attach(sock,base,CB_OUT);
+  gbase = event_base_new();
+  levent_socket_attach(sock,gbase, CB_IN);
   while(1)
     {
-    event_base_dispatch(base);
+    event_base_dispatch(gbase);
     }
   return 0;
   }
@@ -52,17 +73,10 @@ int main(int argc, char **argv)
 void cb_func(evutil_socket_t fd, short what, void *arg)
   {
   const char *data = arg;
-  void *buf;
-  int bytes;
-  struct sockaddr *addr;
-  socklen_t *addrlen;
   int newfd;
+  int sock;
+  int my_conn_set;
 
-  if((buf=malloc(K64))==NULL)
-    {
-    perror("malloc");
-    exit(1);
-    }
   printf("Got an event on socket %d:%s%s%s%s [%s]\n",
   (int) fd,
     (what&EV_TIMEOUT) ? " timeout" : "",
@@ -78,10 +92,14 @@ void cb_func(evutil_socket_t fd, short what, void *arg)
       {
       perror("accept");
       }
-    bytes=recv(newfd, buf, K64, 0);
-    if((bytes==-1))
-      {
-      perror("recv");
+    else    /*  We've got an incoming connection */
+      {     /*  Now we can make our outgoing ones, set them up to receive events. */
+      sock=chloe(9999,"127.0.0.1",OUT);
+      levent_socket_attach(sock,gbase, CB_OUT); 
+      my_conn_set=find_unused_conn_set();
+      gstate_table[my_conn_set].inuse=1;
+      gstate_table[my_conn_set].c_in=newfd;
+      gstate_table[my_conn_set].c_out=sock;
       }
     }
   if(!strcmp(data,CB_OUT))
@@ -158,6 +176,28 @@ void levent_socket_attach(int sock, struct event_base *base, char * cb_inout)
   ev = event_new(base, sock, EV_READ|EV_WRITE, cb_func, cb_inout);
   event_add(ev, NULL);
   }
+
+int find_unused_conn_set (void)
+  {
+  int i;
+  int firstunused=-1;
+
+  for (i=0; i<999; i++)
+    {
+    if(gstate_table[i].inuse==0)
+      {
+      firstunused=i;
+      break;
+      }
+    }
+  if(firstunused==-1)
+    {
+    printf("state table overflow!\n");
+    exit(1);
+    }
+  return firstunused;   
+  }
+  
   
 
   
