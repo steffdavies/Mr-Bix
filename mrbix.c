@@ -15,11 +15,25 @@ struct conn_tuple
   struct bufferevent *bev_out;
   struct bufferevent *bev_out_nr;
   };
+
+int free_if_bevs_freed(struct conn_tuple *connections)
+{
+  if((connections->bev_listening == 0) && (connections->bev_out == 0) && (connections->bev_out_nr == 0))
+  {
+    printf("about to free %p\n",connections);
+    free(connections);
+    return 1;
+  }
+  else
+  {
+    return 0;
+  }
+}
   
-static void read_cb_listener (struct bufferevent *bev, void *ctx)
+void read_cb_listener (struct bufferevent *bev, void *ctx)
 {
   struct conn_tuple *connections=ctx;
-  /* This callback is invoked when there is data to read on bev. */
+  /* This callback is invoked when there is data to read on the listening socket. */
   struct evbuffer *input = bufferevent_get_input (bev);
   struct evbuffer *output = bufferevent_get_output (connections->bev_out);
 
@@ -27,10 +41,10 @@ static void read_cb_listener (struct bufferevent *bev, void *ctx)
   evbuffer_add_buffer (output, input);
 }
 
-static void read_cb_out (struct bufferevent *bev, void *ctx)
+void read_cb_out (struct bufferevent *bev, void *ctx)
 {
   struct conn_tuple *connections=ctx;
-  /* This callback is invoked when there is data to read on bev. */
+  /* This callback is invoked when there is data to read on outgoing connection. */
   struct evbuffer *input = bufferevent_get_input (bev);
   struct evbuffer *output = bufferevent_get_output (connections->bev_listening);
 
@@ -38,40 +52,41 @@ static void read_cb_out (struct bufferevent *bev, void *ctx)
   evbuffer_add_buffer (output, input);
 }
 
-static void error_cb (struct bufferevent *bev, short events, void *ctx)
+void error_cb (struct bufferevent *bev, short events, void *ctx)
 {
   struct conn_tuple *connections=ctx;
   if (events & BEV_EVENT_ERROR)
     perror ("Error from bufferevent");
   if (events & (BEV_EVENT_EOF | BEV_EVENT_ERROR))
     {
-    bufferevent_free(bev);
+    bufferevent_free(connections->bev_listening);
+    connections->bev_listening=0;
     bufferevent_free(connections->bev_out);
-    printf("about to free %p\n",connections);
-    free(connections); 
+    connections->bev_out=0;
+    free_if_bevs_freed(connections);
     }
-  
 }
 
-static void accept_conn_cb (struct evconnlistener *listener,
+void accept_conn_cb (struct evconnlistener *listener,
 		evutil_socket_t fd, struct sockaddr *address, int socklen,
 		void *ctx)
 {
   /*  We got a new connection! Set up a bufferevent for it, make our 
       outgoing connection and set up its bufferevent. */
   struct event_base *base = evconnlistener_get_base (listener);
-  struct bufferevent *bev_listening = bufferevent_socket_new (base, fd, BEV_OPT_CLOSE_ON_FREE);
-  struct bufferevent *bev_out = bufferevent_socket_new (base, fd, BEV_OPT_CLOSE_ON_FREE);
+  struct bufferevent *bev_listening;
+  struct bufferevent *bev_out;
   struct sockaddr_in sockaddr_outgoing;
   struct conn_tuple *connections;
 
   connections=malloc((sizeof(struct conn_tuple)));
   printf("allocated %lx bytes at %p\n",sizeof(struct conn_tuple),connections);
+  bev_listening = bufferevent_socket_new (base, fd, BEV_OPT_CLOSE_ON_FREE);
   connections->bev_listening=bev_listening;
   bufferevent_setcb (bev_listening, read_cb_listener, NULL, error_cb, connections);
   bufferevent_enable (bev_listening, EV_READ | EV_WRITE);
 
-  bev_out = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
+  bev_out = bufferevent_socket_new (base, -1, BEV_OPT_CLOSE_ON_FREE);
   connections->bev_out=bev_out;
   bufferevent_setcb(bev_out, read_cb_out, NULL, error_cb, connections);
   bufferevent_enable(bev_out, EV_READ);
