@@ -9,28 +9,15 @@
 #include <stdio.h>
 #include <fcntl.h>
 
+int g_out_ip,g_out_nr_ip;
+int g_out_port, g_out_nr_port;
+
 struct conn_tuple
 {
   struct bufferevent *bev_listening;
   struct bufferevent *bev_out;
   struct bufferevent *bev_out_nr;
 };
-
-int
-free_if_bevs_freed (struct conn_tuple *connections)
-{
-  if ((connections->bev_listening == 0) && (connections->bev_out == 0)
-      && (connections->bev_out_nr == 0))
-    {
-      printf ("about to free %p\n", connections);
-      free (connections);
-      return 1;
-    }
-  else
-    {
-      return 0;
-    }
-}
 
 void
 read_cb_listener (struct bufferevent *bev, void *ctx)
@@ -78,7 +65,20 @@ read_cb_out_nr (struct bufferevent *bev, void *ctx)
   input = bufferevent_get_input (bev);
   len = evbuffer_get_length (input);
   evbuffer_drain (input, len);
-  printf ("Drained %lu bytes\n", (unsigned long) len);
+}
+
+void
+error_cb_nr (struct bufferevent *bev, short events, void *ctx)
+{
+  struct conn_tuple *connections = ctx;
+  if (events & BEV_EVENT_ERROR)
+    perror ("Error from bufferevent on nr");
+  if ((events & (BEV_EVENT_EOF | BEV_EVENT_ERROR))
+      || (events & BEV_EVENT_ERROR))
+    {
+      bufferevent_free (connections->bev_out_nr);
+      connections->bev_out_nr = 0;
+    }
 }
 
 void
@@ -87,15 +87,16 @@ error_cb (struct bufferevent *bev, short events, void *ctx)
   struct conn_tuple *connections = ctx;
   if (events & BEV_EVENT_ERROR)
     perror ("Error from bufferevent");
-  if (events & (BEV_EVENT_EOF | BEV_EVENT_ERROR))
+  if ((events & (BEV_EVENT_EOF | BEV_EVENT_ERROR))
+      || (events & BEV_EVENT_ERROR))
     {
       bufferevent_free (connections->bev_listening);
-      connections->bev_listening = 0;
       bufferevent_free (connections->bev_out);
-      connections->bev_out = 0;
-      bufferevent_free (connections->bev_out_nr);
-      connections->bev_out_nr = 0;
-      free_if_bevs_freed (connections);
+      if (connections->bev_out_nr != 0)
+	      {
+	        bufferevent_free (connections->bev_out_nr);
+	      }
+      free (connections);
     }
 }
 
@@ -116,8 +117,6 @@ accept_conn_cb (struct evconnlistener *listener,
 
 /*  Set up listening socket */
   connections = malloc ((sizeof (struct conn_tuple)));
-  printf ("allocated %lx bytes at %p\n", sizeof (struct conn_tuple),
-	  connections);
   bev_listening = bufferevent_socket_new (base, fd, BEV_OPT_CLOSE_ON_FREE);
   connections->bev_listening = bev_listening;
   bufferevent_setcb (bev_listening, read_cb_listener, NULL, error_cb,
@@ -132,8 +131,8 @@ accept_conn_cb (struct evconnlistener *listener,
 
   memset (&sockaddr_outgoing, 0, sizeof (sockaddr_outgoing));
   sockaddr_outgoing.sin_family = AF_INET;
-  sockaddr_outgoing.sin_addr.s_addr = htonl (0x7f000001);
-  sockaddr_outgoing.sin_port = htons (80);
+  sockaddr_outgoing.sin_addr.s_addr = g_out_ip;
+  sockaddr_outgoing.sin_port = g_out_port;
 
   if (bufferevent_socket_connect
       (bev_out, (struct sockaddr *) &sockaddr_outgoing,
@@ -145,19 +144,20 @@ accept_conn_cb (struct evconnlistener *listener,
 /*  Set up outgoing non-return socket */
   bev_out_nr = bufferevent_socket_new (base, -1, BEV_OPT_CLOSE_ON_FREE);
   connections->bev_out_nr = bev_out_nr;
-  bufferevent_setcb (bev_out_nr, read_cb_out_nr, NULL, error_cb, connections);
+  bufferevent_setcb (bev_out_nr, read_cb_out_nr, NULL, error_cb_nr,
+		     connections);
   bufferevent_enable (bev_out_nr, EV_READ);
 
   memset (&sockaddr_outgoing_nr, 0, sizeof (sockaddr_outgoing_nr));
   sockaddr_outgoing_nr.sin_family = AF_INET;
-  sockaddr_outgoing_nr.sin_addr.s_addr = htonl (0x7f000001);
-  sockaddr_outgoing_nr.sin_port = htons (81);
+  sockaddr_outgoing_nr.sin_addr.s_addr = g_out_nr_ip;
+  sockaddr_outgoing_nr.sin_port = g_out_nr_port;
 
   if (bufferevent_socket_connect
       (bev_out_nr, (struct sockaddr *) &sockaddr_outgoing_nr,
        sizeof (sockaddr_outgoing_nr)) != 0)
     {
-      perror ("Outgoing connection");
+      perror ("Outgoing nr connection");
     }
 
 
@@ -169,18 +169,24 @@ main (int argc, char **argv)
   struct event_base *base;
   struct evconnlistener *listener;
   struct sockaddr_in sin;
+  int listening_port;  
 
-  int port = 9876;
-
-  if (argc > 1)
+  if(argc != 6)
     {
-      port = atoi (argv[1]);
+      printf("Usage:\nmrbix <listeningport> <ip_known_good> <port_known_good> <ip_under_test> <port_under_test>\n");
+      exit(1);
     }
-  if (port <= 0 || port > 65535)
+  listening_port = atoi (argv[1]);
+  if (listening_port <= 0 || listening_port > 65535)
     {
       puts ("Invalid port");
       return 1;
     }
+
+  g_out_ip=inet_addr(argv[2]);
+  g_out_port=atoi(argv[3]);
+  g_out_nr_ip=inet_addr(argv[4]);
+  g_out_nr_port=atoi(argv[5]);
 
   base = event_base_new ();
   if (!base)
@@ -192,7 +198,7 @@ main (int argc, char **argv)
   memset (&sin, 0, sizeof (sin));
   sin.sin_family = AF_INET;
   sin.sin_addr.s_addr = htonl (0);
-  sin.sin_port = htons (port);
+  sin.sin_port = htons (listening_port);
 
   listener = evconnlistener_new_bind (base, accept_conn_cb, NULL,
 				      LEV_OPT_CLOSE_ON_FREE |
