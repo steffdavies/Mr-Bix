@@ -36,9 +36,18 @@ void read_cb_listener (struct bufferevent *bev, void *ctx)
   /* This callback is invoked when there is data to read on the listening socket. */
   struct evbuffer *input = bufferevent_get_input (bev);
   struct evbuffer *output = bufferevent_get_output (connections->bev_out);
+  struct evbuffer *output_nr = bufferevent_get_output (connections->bev_out_nr);
+  size_t len;
+  void *scratch;
 
-  /* Copy all the data from the input buffer to the output buffer. */
-  evbuffer_add_buffer (output, input);
+  len=evbuffer_get_length(input);
+  scratch=malloc(len);
+  evbuffer_remove(input, scratch, len);
+
+  /* Copy all the data from the input buffer to the output buffers. */
+  evbuffer_add (output,scratch,len);
+  evbuffer_add (output_nr,scratch,len);
+  free(scratch);
 }
 
 void read_cb_out (struct bufferevent *bev, void *ctx)
@@ -50,6 +59,19 @@ void read_cb_out (struct bufferevent *bev, void *ctx)
 
   /* Copy all the data from the input buffer to the output buffer. */
   evbuffer_add_buffer (output, input);
+}
+
+void read_cb_out_nr (struct bufferevent *bev, void *ctx)
+{
+  /* This callback is invoked when there is data to read on outgoing connection without return leg. */
+  size_t len;
+  struct evbuffer *input;
+
+/* In this instance, we want to throw the data away, not copy it */
+  input=bufferevent_get_input(bev);
+  len=evbuffer_get_length(input);
+  evbuffer_drain(input, len);
+  printf("Drained %lu bytes\n",(unsigned long) len);
 }
 
 void error_cb (struct bufferevent *bev, short events, void *ctx)
@@ -72,13 +94,16 @@ void accept_conn_cb (struct evconnlistener *listener,
 		void *ctx)
 {
   /*  We got a new connection! Set up a bufferevent for it, make our 
-      outgoing connection and set up its bufferevent. */
+      outgoing connections and set up their bufferevents. */
   struct event_base *base = evconnlistener_get_base (listener);
   struct bufferevent *bev_listening;
   struct bufferevent *bev_out;
+  struct bufferevent *bev_out_nr;
   struct sockaddr_in sockaddr_outgoing;
+  struct sockaddr_in sockaddr_outgoing_nr;
   struct conn_tuple *connections;
 
+/*  Set up listening socket */
   connections=malloc((sizeof(struct conn_tuple)));
   printf("allocated %lx bytes at %p\n",sizeof(struct conn_tuple),connections);
   bev_listening = bufferevent_socket_new (base, fd, BEV_OPT_CLOSE_ON_FREE);
@@ -86,6 +111,7 @@ void accept_conn_cb (struct evconnlistener *listener,
   bufferevent_setcb (bev_listening, read_cb_listener, NULL, error_cb, connections);
   bufferevent_enable (bev_listening, EV_READ | EV_WRITE);
 
+/*  Set up outgoing socket */
   bev_out = bufferevent_socket_new (base, -1, BEV_OPT_CLOSE_ON_FREE);
   connections->bev_out=bev_out;
   bufferevent_setcb(bev_out, read_cb_out, NULL, error_cb, connections);
@@ -100,6 +126,24 @@ void accept_conn_cb (struct evconnlistener *listener,
     {
     perror("Outgoing connection");
     }
+
+/*  Set up outgoing non-return socket */
+  bev_out_nr = bufferevent_socket_new (base, -1, BEV_OPT_CLOSE_ON_FREE);
+  connections->bev_out_nr=bev_out_nr;
+  bufferevent_setcb(bev_out_nr, read_cb_out_nr, NULL, error_cb, connections);
+  bufferevent_enable(bev_out_nr, EV_READ);
+
+  memset(&sockaddr_outgoing_nr, 0, sizeof(sockaddr_outgoing_nr));
+  sockaddr_outgoing_nr.sin_family=AF_INET;
+  sockaddr_outgoing_nr.sin_addr.s_addr = htonl(0x7f000001);
+  sockaddr_outgoing_nr.sin_port = htons(9001);
+
+  if(bufferevent_socket_connect(bev_out_nr, (struct sockaddr *)&sockaddr_outgoing_nr, sizeof(sockaddr_outgoing_nr))!=0)
+    {
+    perror("Outgoing connection");
+    }
+
+
 }
 
 int main (int argc, char **argv)
