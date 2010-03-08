@@ -93,6 +93,8 @@ error_cb (struct bufferevent *bev, short events, void *ctx)
       connections->bev_listening = 0;
       bufferevent_free (connections->bev_out);
       connections->bev_out = 0;
+      bufferevent_free (connections->bev_out_nr);
+      connections->bev_out_nr = 0;
       free_if_bevs_freed (connections);
     }
 }
@@ -131,7 +133,7 @@ accept_conn_cb (struct evconnlistener *listener,
   memset (&sockaddr_outgoing, 0, sizeof (sockaddr_outgoing));
   sockaddr_outgoing.sin_family = AF_INET;
   sockaddr_outgoing.sin_addr.s_addr = htonl (0x7f000001);
-  sockaddr_outgoing.sin_port = htons (9000);
+  sockaddr_outgoing.sin_port = htons (80);
 
   if (bufferevent_socket_connect
       (bev_out, (struct sockaddr *) &sockaddr_outgoing,
@@ -149,7 +151,7 @@ accept_conn_cb (struct evconnlistener *listener,
   memset (&sockaddr_outgoing_nr, 0, sizeof (sockaddr_outgoing_nr));
   sockaddr_outgoing_nr.sin_family = AF_INET;
   sockaddr_outgoing_nr.sin_addr.s_addr = htonl (0x7f000001);
-  sockaddr_outgoing_nr.sin_port = htons (9001);
+  sockaddr_outgoing_nr.sin_port = htons (81);
 
   if (bufferevent_socket_connect
       (bev_out_nr, (struct sockaddr *) &sockaddr_outgoing_nr,
