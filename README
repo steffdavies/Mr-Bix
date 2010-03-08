@@ -1,0 +1,30 @@
+A TCP proxy of sorts, in which an incoming connection becomes two outgoing
+connections, only one of which returns data to the original incoming connection
+as with a normal TCP proxy - data returned from the other is discarded.
+
+"What use is that?"
+
+Consider two machines, one of which has known performance, while the other has
+unknown performance. By interposing Mr Bix between these machines and whatever
+is making TCP connections to them, both machines can handle the same requests
+at the same time, while clients only see the responses from the known-good
+machine.
+
+At the moment, all addresses and ports are hardcoded, but eventually you'll be
+able to run it like this:
+
+mrbix 1234 1.2.3.4 2345 2.3.4.5 3456
+
+to listen on port 1234 and redirect traffic to 1.2.3.4:2345 (known good) and
+2.3.4.5:3456 (under test). Then simply graph whatever you're interested in
+on both machines with your favourite monitoring tool and compare the graphs
+to get a picture of performance under real-world load. Since Mr Bix works at the
+level of TCP connections, this should work for databases, web servers, file
+servers and many other things.
+
+"Why 'Mr Bix'"?
+
+See http://www.redmeat.com/redmeat/2000-02-01/index.html
+and http://www.redmeat.com/redmeat/2000-06-13/index.html
+
+
