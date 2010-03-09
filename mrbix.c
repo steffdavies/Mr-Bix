@@ -26,10 +26,10 @@ read_cb_listener (struct bufferevent *bev, void *ctx)
   /* This callback is invoked when there is data to read on the listening socket. */
   struct evbuffer *input = bufferevent_get_input (bev);
   struct evbuffer *output = bufferevent_get_output (connections->bev_out);
+  struct evbuffer *output_nr;
   if(connections->bev_out_nr)
     {
-      struct evbuffer *output_nr =
-        bufferevent_get_output (connections->bev_out_nr);
+      output_nr = bufferevent_get_output (connections->bev_out_nr);
     }
   size_t len;
   void *scratch;
