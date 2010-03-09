@@ -10,8 +10,7 @@ is making TCP connections to them, both machines can handle the same requests
 at the same time, while clients only see the responses from the known-good
 machine.
 
-At the moment, all addresses and ports are hardcoded, but eventually you'll be
-able to run it like this:
+Run it like this:
 
 mrbix 1234 1.2.3.4 2345 2.3.4.5 3456
 
