@@ -10,7 +10,7 @@
 #include <fcntl.h>
 
 int g_out_ip,g_out_nr_ip;
-int g_out_port, g_out_nr_port;
+int g_out_port,g_out_nr_port;
 
 struct conn_tuple
 {
@@ -179,7 +179,6 @@ main (int argc, char **argv)
   struct evconnlistener *listener;
   struct sockaddr_in sin;
   int listening_port;  
-
   if(argc != 6)
     {
       printf("Usage:\nmrbix <listeningport> <ip_known_good> <port_known_good> <ip_under_test> <port_under_test>\n");
@@ -193,9 +192,9 @@ main (int argc, char **argv)
     }
 
   g_out_ip=inet_addr(argv[2]);
-  g_out_port=atoi(argv[3]);
+  g_out_port=htons(atoi(argv[3]));
   g_out_nr_ip=inet_addr(argv[4]);
-  g_out_nr_port=atoi(argv[5]);
+  g_out_nr_port=htons(atoi(argv[5]));
 
   base = event_base_new ();
   if (!base)
