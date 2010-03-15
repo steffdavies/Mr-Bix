@@ -84,7 +84,14 @@ error_cb_nr (struct bufferevent *bev, short events, void *ctx)
   struct conn_tuple *connections = ctx;
   if (events & BEV_EVENT_ERROR)
     {
-      printf ("ERROR: %s on nr bev: %p\n",strerror(errno), bev);
+      if(bev==connections->bev_out_nr)
+        {
+          printf ("ERROR: %s on bev_out_nr: %p\n",strerror(errno), bev);
+        }
+      else
+        {
+          printf("ERROR: %s on UNKNOWN bev: %p - this should not happen\n",strerror(errno), bev);
+        }
     }
   if ((events & (BEV_EVENT_EOF | BEV_EVENT_ERROR))
       || (events & BEV_EVENT_ERROR))
