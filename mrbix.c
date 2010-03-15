@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <fcntl.h>
+#include <errno.h>
 
 int g_out_ip,g_out_nr_ip;
 int g_out_port,g_out_nr_port;
@@ -30,6 +31,10 @@ read_cb_listener (struct bufferevent *bev, void *ctx)
   if(connections->bev_out_nr)
     {
       output_nr = bufferevent_get_output (connections->bev_out_nr);
+    }
+  else
+    {
+      printf("Listening bev %p would have written to nr output, but it was already closed\n",bev);
     }
   size_t len;
   void *scratch;
@@ -79,12 +84,13 @@ error_cb_nr (struct bufferevent *bev, short events, void *ctx)
   struct conn_tuple *connections = ctx;
   if (events & BEV_EVENT_ERROR)
     {
-      perror ("Error from bufferevent on nr");
+      printf ("ERROR: %s on nr bev: %p\n",strerror(errno), bev);
     }
   if ((events & (BEV_EVENT_EOF | BEV_EVENT_ERROR))
       || (events & BEV_EVENT_ERROR))
     {
       bufferevent_free (connections->bev_out_nr);
+      printf("Freed bev: %p\n",connections->bev_out_nr);
       connections->bev_out_nr = 0;
     }
 }
@@ -95,18 +101,22 @@ error_cb (struct bufferevent *bev, short events, void *ctx)
   struct conn_tuple *connections = ctx;
   if (events & BEV_EVENT_ERROR)
     {
-      perror ("Error from bufferevent on");
+      printf ("ERROR: %s on nr bev: %p\n",strerror(errno), bev);
     }
   if ((events & (BEV_EVENT_EOF | BEV_EVENT_ERROR))
       || (events & BEV_EVENT_ERROR))
     {
       bufferevent_free (connections->bev_listening);
+      printf("Freed listening bev: %p\n",connections->bev_listening);
       bufferevent_free (connections->bev_out);
+      printf("Freed outgoing bev: %p\n",connections->bev_out);
       if (connections->bev_out_nr != 0)
 	      {
 	        bufferevent_free (connections->bev_out_nr);
+          printf("Freed outgoing nr bev: %p\n",connections->bev_out_nr);
 	      }
       free (connections);
+      printf("Freed: %p\n",connections);
     }
 }
 
@@ -129,6 +139,7 @@ accept_conn_cb (struct evconnlistener *listener,
   connections = malloc ((sizeof (struct conn_tuple)));
   bev_listening = bufferevent_socket_new (base, fd, BEV_OPT_CLOSE_ON_FREE);
   connections->bev_listening = bev_listening;
+  printf("Created listening bev: %p\n",bev_listening);
   bufferevent_setcb (bev_listening, read_cb_listener, NULL, error_cb,
 		     connections);
   bufferevent_enable (bev_listening, EV_READ | EV_WRITE);
@@ -136,6 +147,7 @@ accept_conn_cb (struct evconnlistener *listener,
 /*  Set up outgoing socket */
   bev_out = bufferevent_socket_new (base, -1, BEV_OPT_CLOSE_ON_FREE);
   connections->bev_out = bev_out;
+  printf("Created outgoing bev: %p\n",bev_out);
   bufferevent_setcb (bev_out, read_cb_out, NULL, error_cb, connections);
   bufferevent_enable (bev_out, EV_READ);
 
@@ -148,12 +160,13 @@ accept_conn_cb (struct evconnlistener *listener,
       (bev_out, (struct sockaddr *) &sockaddr_outgoing,
        sizeof (sockaddr_outgoing)) != 0)
     {
-      perror ("Outgoing connection");
+      printf("ERROR: outgoing socket connect failed: %s\n",strerror(errno));
     }
 
 /*  Set up outgoing non-return socket */
   bev_out_nr = bufferevent_socket_new (base, -1, BEV_OPT_CLOSE_ON_FREE);
   connections->bev_out_nr = bev_out_nr;
+  printf("Created outgoing nr bev: %p\n",bev_out_nr);
   bufferevent_setcb (bev_out_nr, read_cb_out_nr, NULL, error_cb_nr,
 		     connections);
   bufferevent_enable (bev_out_nr, EV_READ);
@@ -167,7 +180,7 @@ accept_conn_cb (struct evconnlistener *listener,
       (bev_out_nr, (struct sockaddr *) &sockaddr_outgoing_nr,
        sizeof (sockaddr_outgoing_nr)) != 0)
     {
-      perror ("Outgoing nr connection");
+      printf("ERROR: outgoing nr socket connect failed: %s\n",strerror(errno));
     }
 
 
