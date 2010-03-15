@@ -90,7 +90,7 @@ error_cb_nr (struct bufferevent *bev, short events, void *ctx)
       || (events & BEV_EVENT_ERROR))
     {
       bufferevent_free (connections->bev_out_nr);
-      printf("Freed bev: %p\n",connections->bev_out_nr);
+      printf("Freed outgoing nr bev: %p\n",connections->bev_out_nr);
       connections->bev_out_nr = 0;
     }
 }
@@ -101,7 +101,18 @@ error_cb (struct bufferevent *bev, short events, void *ctx)
   struct conn_tuple *connections = ctx;
   if (events & BEV_EVENT_ERROR)
     {
-      printf ("ERROR: %s on nr bev: %p\n",strerror(errno), bev);
+      if(bev==connections->bev_out)
+        {
+          printf ("ERROR: %s on bev_out: %p\n",strerror(errno), bev);
+        }
+      else if(bev==connections->bev_listening)
+        {
+          printf ("ERROR: %s on bev_listening: %p\n",strerror(errno), bev);
+        }
+      else
+        {
+          printf("ERROR: %s on UNKNOWN bev: %p - this should not happen\n",strerror(errno), bev);
+        }
     }
   if ((events & (BEV_EVENT_EOF | BEV_EVENT_ERROR))
       || (events & BEV_EVENT_ERROR))
